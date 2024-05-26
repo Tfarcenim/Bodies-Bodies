@@ -17,21 +17,19 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
 import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerType;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.SpawnGroup;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.ScreenHandlerType;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.GameRules;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.MobCategory;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.MenuType;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
@@ -41,9 +39,9 @@ import java.nio.file.Files;
 
 public class BodiesBodies implements ModInitializer {
 
-    public static final EntityType<DeadBodyEntity> DEAD_BODY_ENTITY_TYPE = Registry.register(Registries.ENTITY_TYPE, new Identifier("bodiesbodies", "dead_body"), EntityType.Builder.create(DeadBodyEntity::new, SpawnGroup.MISC).setDimensions(0.6F, 1.8F).build("dead_body"));
+    public static final EntityType<DeadBodyEntity> DEAD_BODY_ENTITY_TYPE = Registry.register(BuiltInRegistries.ENTITY_TYPE, new ResourceLocation("bodiesbodies", "dead_body"), EntityType.Builder.of(DeadBodyEntity::new, MobCategory.MISC).sized(0.6F, 1.8F).build("dead_body"));
 
-    public static final ScreenHandlerType<VanillaDeadBodyInventoryScreenHandler> VANILLA_DEAD_BODY_SH = Registry.register(Registries.SCREEN_HANDLER, new Identifier("bodiesbodies", "vanilla_dead_body"), new ExtendedScreenHandlerType<>((syncId, inventory, buf) -> {
+    public static final MenuType<VanillaDeadBodyInventoryScreenHandler> VANILLA_DEAD_BODY_SH = Registry.register(BuiltInRegistries.MENU, new ResourceLocation("bodiesbodies", "vanilla_dead_body"), new ExtendedScreenHandlerType<>((syncId, inventory, buf) -> {
         int id = buf.readInt();
         DeathData deathData = DeathData.readNbt(buf.readNbt());
         for (DeadBodyData data : deathData.savedData()) {
@@ -54,9 +52,9 @@ public class BodiesBodies implements ModInitializer {
         return null;
     }));
 
-    public static final Identifier TRANSFER_ALL_ITEMS_PACKET = new Identifier("bodiesbodies", "transfer_all");
-    public static final Identifier OPEN_DEAD_BODY_INV = new Identifier("bodiesbodies", "open_inv");
-    public static final Identifier OPEN_DEATH_HISTORY = new Identifier("bodiesbodies", "death_history");
+    public static final ResourceLocation TRANSFER_ALL_ITEMS_PACKET = new ResourceLocation("bodiesbodies", "transfer_all");
+    public static final ResourceLocation OPEN_DEAD_BODY_INV = new ResourceLocation("bodiesbodies", "open_inv");
+    public static final ResourceLocation OPEN_DEATH_HISTORY = new ResourceLocation("bodiesbodies", "death_history");
 
     @Override
     public void onInitialize() {
@@ -79,7 +77,7 @@ public class BodiesBodies implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(TRANSFER_ALL_ITEMS_PACKET, (server, player, handler, buf, responseSender) -> {
             int deathId = buf.readInt();
             server.execute(() -> {
-                DeathData deathData = DeathHistory.getState(player.getServerWorld()).getDeathData(player.getUuid(), deathId);
+                DeathData deathData = DeathHistory.getState(player.serverLevel()).getDeathData(player.getUUID(), deathId);
                 if (deathData != null)
                     for (DeadBodyData data : deathData.savedData()) {
                         data.transferTo(player);
@@ -89,27 +87,27 @@ public class BodiesBodies implements ModInitializer {
 
         ServerPlayNetworking.registerGlobalReceiver(OPEN_DEAD_BODY_INV, (server, player, handler, buf, responseSender) -> {
             int deathId = buf.readInt();
-            String invId = buf.readString();
+            String invId = buf.readUtf();
             server.execute(() -> {
-                DeathData deathData = DeathHistory.getState(player.getServerWorld()).getDeathData(player.getUuid(), deathId);
+                DeathData deathData = DeathHistory.getState(player.serverLevel()).getDeathData(player.getUUID(), deathId);
                 if (deathData != null)
                     for (DeadBodyData data : deathData.savedData()) {
                         if (data.getId().equals(invId)) {
-                            player.openHandledScreen(new ExtendedScreenHandlerFactory() {
+                            player.openMenu(new ExtendedScreenHandlerFactory() {
                                 @Override
-                                public void writeScreenOpeningData(ServerPlayerEntity player, PacketByteBuf buf) {
+                                public void writeScreenOpeningData(ServerPlayer player, FriendlyByteBuf buf) {
                                     buf.writeInt(deathId);
                                     buf.writeNbt(deathData.writeNbt());
                                 }
 
                                 @Override
-                                public Text getDisplayName() {
-                                    return Text.literal("Dead body");
+                                public Component getDisplayName() {
+                                    return Component.literal("Dead body");
                                 }
 
                                 @Nullable
                                 @Override
-                                public ScreenHandler createMenu(int syncId, PlayerInventory playerInventory, PlayerEntity player) {
+                                public AbstractContainerMenu createMenu(int syncId, Inventory playerInventory, Player player) {
                                     return data.createMenu(syncId, playerInventory, player, deathData);
                                 }
                             });
@@ -120,13 +118,13 @@ public class BodiesBodies implements ModInitializer {
         });
 
         ServerLifecycleEvents.SERVER_STARTED.register((server) -> {
-            ServerWorld world = server.getOverworld();
+            ServerLevel world = server.overworld();
             DeathHistory data = DeathHistory.getState(world);
-            DeathHistory purged = world.getPersistentStateManager()
-                    .getOrCreate(nbt -> DeathHistory.readNbt(world, nbt), () -> new DeathHistory(world), "death_history_purged");
+            DeathHistory purged = world.getDataStorage()
+                    .computeIfAbsent(nbt -> DeathHistory.readNbt(world, nbt), () -> new DeathHistory(world), "death_history_purged");
             int purgedCount = data.purgeOldEntries(purged);
             if (purgedCount > 0)
-                purged.markDirty();
+                purged.setDirty();
         });
 
         BodiesBodiesCommands.registerCommands();
@@ -135,8 +133,8 @@ public class BodiesBodies implements ModInitializer {
             TrinketCompat.load();
     }
 
-    public static void createDeadBody(ServerPlayerEntity player) {
+    public static void createDeadBody(ServerPlayer player) {
         DeadBodyEntity deadBodyEntity = DeadBodyEntity.create(player);
-        player.getWorld().spawnEntity(deadBodyEntity);
+        player.level().addFreshEntity(deadBodyEntity);
     }
 }

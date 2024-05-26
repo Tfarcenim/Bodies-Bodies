@@ -11,18 +11,13 @@ import me.steven.bodiesbodies.screen.VanillaDeadBodyInventoryScreen;
 import me.steven.bodiesbodies.screen.VanillaDeadBodyInventoryScreenHandler;
 import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerType;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.gui.screen.ingame.HandledScreens;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
-import net.minecraft.screen.ScreenHandlerType;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.inventory.MenuType;
 
 public class TrinketCompat {
-    public static final ScreenHandlerType<TrinketsDeadBodyInventoryScreenHandler> TRINKETS_DEAD_BODY_SH = Registry.register(Registries.SCREEN_HANDLER, new Identifier("bodiesbodies", "trinkets_dead_body"), new ExtendedScreenHandlerType<>((syncId, inventory, buf) -> {
+    public static final MenuType<TrinketsDeadBodyInventoryScreenHandler> TRINKETS_DEAD_BODY_SH = Registry.register(BuiltInRegistries.MENU, new ResourceLocation("bodiesbodies", "trinkets_dead_body"), new ExtendedScreenHandlerType<>((syncId, inventory, buf) -> {
         int id = buf.readInt();
         DeathData deathData = DeathData.readNbt(buf.readNbt());
         for (DeadBodyData data : deathData.savedData()) {

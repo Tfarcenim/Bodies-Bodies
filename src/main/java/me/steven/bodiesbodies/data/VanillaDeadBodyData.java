@@ -4,49 +4,49 @@ import me.steven.bodiesbodies.data.persistentstate.DeathData;
 import me.steven.bodiesbodies.entity.DeadBodyEntity;
 import me.steven.bodiesbodies.screen.VanillaDeadBodyInventoryScreenHandler;
 import me.steven.bodiesbodies.utils.Utils;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.mob.SkeletonEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.util.collection.DefaultedList;
+import net.minecraft.core.NonNullList;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.monster.Skeleton;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.item.ItemStack;
 
 public class VanillaDeadBodyData implements DeadBodyData {
-    public DefaultedList<ItemStack> main;
-    public DefaultedList<ItemStack> armor;
-    public DefaultedList<ItemStack> offHand;
+    public NonNullList<ItemStack> main;
+    public NonNullList<ItemStack> armor;
+    public NonNullList<ItemStack> offHand;
     public int selectedSlot;
     public VanillaDeadBodyData() {
-        this.main = DefaultedList.ofSize(36, ItemStack.EMPTY);
-        this.armor = DefaultedList.ofSize(4, ItemStack.EMPTY);
-        this.offHand = DefaultedList.ofSize(1, ItemStack.EMPTY);
+        this.main = NonNullList.withSize(36, ItemStack.EMPTY);
+        this.armor = NonNullList.withSize(4, ItemStack.EMPTY);
+        this.offHand = NonNullList.withSize(1, ItemStack.EMPTY);
     }
 
     @Override
-    public DeadBodyData transferFrom(PlayerEntity player) {
-        PlayerInventory inv = player.getInventory();
-        main = DefaultedList.ofSize(inv.main.size(), ItemStack.EMPTY);
-        for (int i = 0; i < inv.main.size(); i++) {
-            ItemStack stack = inv.main.get(i);
-            main.set(i, stack.copyAndEmpty());
+    public DeadBodyData transferFrom(Player player) {
+        Inventory inv = player.getInventory();
+        main = NonNullList.withSize(inv.items.size(), ItemStack.EMPTY);
+        for (int i = 0; i < inv.items.size(); i++) {
+            ItemStack stack = inv.items.get(i);
+            main.set(i, stack.copyAndClear());
         }
 
-        armor = DefaultedList.ofSize(inv.armor.size(), ItemStack.EMPTY);
+        armor = NonNullList.withSize(inv.armor.size(), ItemStack.EMPTY);
         for (int i = 0; i < inv.armor.size(); i++) {
             ItemStack stack = inv.armor.get(i);
-            armor.set(i, stack.copyAndEmpty());
+            armor.set(i, stack.copyAndClear());
         }
 
-        offHand = DefaultedList.ofSize(inv.offHand.size(), ItemStack.EMPTY);
-        for (int i = 0; i < inv.offHand.size(); i++) {
-            ItemStack stack = inv.offHand.get(i);
-            offHand.set(i, stack.copyAndEmpty());
+        offHand = NonNullList.withSize(inv.offhand.size(), ItemStack.EMPTY);
+        for (int i = 0; i < inv.offhand.size(); i++) {
+            ItemStack stack = inv.offhand.get(i);
+            offHand.set(i, stack.copyAndClear());
         }
 
-        selectedSlot = inv.selectedSlot;
+        selectedSlot = inv.selected;
 
         return this;
     }
@@ -57,7 +57,7 @@ public class VanillaDeadBodyData implements DeadBodyData {
     }
 
     @Override
-    public NbtCompound write(NbtCompound nbt) {
+    public CompoundTag write(CompoundTag nbt) {
         nbt.put("main", write(main));
         nbt.put("armor", write(armor));
         nbt.put("offhand", write(offHand));
@@ -65,7 +65,7 @@ public class VanillaDeadBodyData implements DeadBodyData {
     }
 
     @Override
-    public void read(NbtCompound nbt) {
+    public void read(CompoundTag nbt) {
         read(main, nbt.getCompound("main"));
         read(armor, nbt.getCompound("armor"));
         read(offHand, nbt.getCompound("offhand"));
@@ -73,29 +73,29 @@ public class VanillaDeadBodyData implements DeadBodyData {
 
     @Override
     public void transferTo(LivingEntity entity) {
-        if (entity instanceof PlayerEntity player) {
-            PlayerInventory inv = player.getInventory();
-            for (int i = 0; i < inv.main.size(); i++) {
-                offer(inv.main, entity.getWorld(), entity.getBlockPos(), i, main.get(i));
+        if (entity instanceof Player player) {
+            Inventory inv = player.getInventory();
+            for (int i = 0; i < inv.items.size(); i++) {
+                offer(inv.items, entity.level(), entity.blockPosition(), i, main.get(i));
             }
             for (int i = 0; i < inv.armor.size(); i++) {
-                offer(inv.armor, entity.getWorld(), entity.getBlockPos(), i, armor.get(i));
+                offer(inv.armor, entity.level(), entity.blockPosition(), i, armor.get(i));
             }
-            for (int i = 0; i < inv.offHand.size(); i++) {
-                offer(inv.offHand, entity.getWorld(), entity.getBlockPos(), i, offHand.get(i));
+            for (int i = 0; i < inv.offhand.size(); i++) {
+                offer(inv.offhand, entity.level(), entity.blockPosition(), i, offHand.get(i));
             }
-        } else if (entity instanceof SkeletonEntity skeleton) {
-            skeleton.equipStack(EquipmentSlot.HEAD, armor.get(3));
-            skeleton.equipStack(EquipmentSlot.CHEST, armor.get(2));
-            skeleton.equipStack(EquipmentSlot.LEGS, armor.get(1));
-            skeleton.equipStack(EquipmentSlot.FEET, armor.get(0));
-            skeleton.equipStack(EquipmentSlot.MAINHAND, main.get(selectedSlot));
-            skeleton.equipStack(EquipmentSlot.OFFHAND, offHand.get(0));
+        } else if (entity instanceof Skeleton skeleton) {
+            skeleton.setItemSlot(EquipmentSlot.HEAD, armor.get(3));
+            skeleton.setItemSlot(EquipmentSlot.CHEST, armor.get(2));
+            skeleton.setItemSlot(EquipmentSlot.LEGS, armor.get(1));
+            skeleton.setItemSlot(EquipmentSlot.FEET, armor.get(0));
+            skeleton.setItemSlot(EquipmentSlot.MAINHAND, main.get(selectedSlot));
+            skeleton.setItemSlot(EquipmentSlot.OFFHAND, offHand.get(0));
         }
     }
 
     @Override
-    public ScreenHandler createMenu(int syncId, PlayerInventory playerInventory, PlayerEntity player, DeathData data) {
+    public AbstractContainerMenu createMenu(int syncId, Inventory playerInventory, Player player, DeathData data) {
         return new VanillaDeadBodyInventoryScreenHandler(syncId, playerInventory, data, this);
     }
 

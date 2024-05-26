@@ -11,10 +11,9 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.gui.screen.ingame.HandledScreens;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.text.Text;
-
+import net.minecraft.client.gui.screens.MenuScreens;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.player.Inventory;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -23,9 +22,9 @@ public class BodiesBodiesClient implements ClientModInitializer {
     public void onInitializeClient() {
         EntityRendererRegistry.register(BodiesBodies.DEAD_BODY_ENTITY_TYPE, DeadBodyEntityRenderer::new);
 
-        HandledScreens.register(BodiesBodies.VANILLA_DEAD_BODY_SH, new HandledScreens.Provider<VanillaDeadBodyInventoryScreenHandler, VanillaDeadBodyInventoryScreen>() {
+        MenuScreens.register(BodiesBodies.VANILLA_DEAD_BODY_SH, new MenuScreens.ScreenConstructor<VanillaDeadBodyInventoryScreenHandler, VanillaDeadBodyInventoryScreen>() {
             @Override
-            public VanillaDeadBodyInventoryScreen create(VanillaDeadBodyInventoryScreenHandler handler, PlayerInventory playerInventory, Text title) {
+            public VanillaDeadBodyInventoryScreen create(VanillaDeadBodyInventoryScreenHandler handler, Inventory playerInventory, Component title) {
                 return new VanillaDeadBodyInventoryScreen(handler, playerInventory, title, handler.deathData);
             }
         });
@@ -42,7 +41,7 @@ public class BodiesBodiesClient implements ClientModInitializer {
             }
 
             client.execute(() -> {
-                client.setScreen(new DeathHistoryScreen(Text.literal("Death History"), deathData));
+                client.setScreen(new DeathHistoryScreen(Component.literal("Death History"), deathData));
             });
         });
 

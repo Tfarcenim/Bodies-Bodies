@@ -1,9 +1,8 @@
 package me.steven.bodiesbodies.data;
 
-import net.minecraft.entity.player.PlayerEntity;
-
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.world.entity.player.Player;
 
 public interface DeadBodyDataProvider {
     List<DeadBodyDataProvider> PROVIDERS = new ArrayList<>();
@@ -12,7 +11,7 @@ public interface DeadBodyDataProvider {
         PROVIDERS.add(provider);
     }
 
-    static List<DeadBodyData> init(PlayerEntity player) {
+    static List<DeadBodyData> init(Player player) {
         List<DeadBodyData> data = new ArrayList<>();
         for (DeadBodyDataProvider provider : PROVIDERS) {
             data.add(provider.create().transferFrom(player));

@@ -9,25 +9,24 @@ import me.steven.bodiesbodies.data.persistentstate.DeathHistory;
 import me.steven.bodiesbodies.data.VanillaDeadBodyData;
 import me.steven.bodiesbodies.screen.VanillaDeadBodyInventoryScreenHandler;
 import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityPose;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.data.DataTracker;
-import net.minecraft.entity.data.TrackedData;
-import net.minecraft.entity.data.TrackedDataHandlerRegistry;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.Box;
-import net.minecraft.world.World;
-
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.Pose;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.AABB;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -35,26 +34,26 @@ import java.util.UUID;
 
 public class DeadBodyEntity extends Entity {
 
-    public static final TrackedData<NbtCompound> INVENTORY_DATA = DataTracker.registerData(DeadBodyEntity.class, TrackedDataHandlerRegistry.NBT_COMPOUND);
-    public static final TrackedData<Optional<UUID>> PLAYER_UUID = DataTracker.registerData(DeadBodyEntity.class, TrackedDataHandlerRegistry.OPTIONAL_UUID);
+    public static final EntityDataAccessor<CompoundTag> INVENTORY_DATA = SynchedEntityData.defineId(DeadBodyEntity.class, EntityDataSerializers.COMPOUND_TAG);
+    public static final EntityDataAccessor<Optional<UUID>> PLAYER_UUID = SynchedEntityData.defineId(DeadBodyEntity.class, EntityDataSerializers.OPTIONAL_UUID);
     private int deathDataId;
     private int emptyTimer = 0;
 
-    public DeadBodyEntity(EntityType<?> type, World world) {
+    public DeadBodyEntity(EntityType<?> type, Level world) {
         super(type, world);
-        this.dataTracker.startTracking(PLAYER_UUID, Optional.empty());
-        this.dataTracker.startTracking(INVENTORY_DATA, new NbtCompound());
-        this.intersectionChecked = false;
-        this.setPose(EntityPose.SLEEPING);
+        this.entityData.define(PLAYER_UUID, Optional.empty());
+        this.entityData.define(INVENTORY_DATA, new CompoundTag());
+        this.blocksBuilding = false;
+        this.setPose(Pose.SLEEPING);
     }
 
     @Override
     public void tick() {
         super.tick();
-        if (getWorld().isClient) return;
+        if (level().isClientSide) return;
 
-        ServerWorld world = (ServerWorld) getWorld();
-        if (Config.CONFIG.nonEmptyBodyDisappearAfter > 0 && age > Config.CONFIG.nonEmptyBodyDisappearAfter) {
+        ServerLevel world = (ServerLevel) level();
+        if (Config.CONFIG.nonEmptyBodyDisappearAfter > 0 && tickCount > Config.CONFIG.nonEmptyBodyDisappearAfter) {
             discard();
         }
         DeathData deathData = getDeathData(world);
@@ -71,82 +70,82 @@ public class DeadBodyEntity extends Entity {
         }
     }
 
-    public DeathData getDeathData(ServerWorld world) {
+    public DeathData getDeathData(ServerLevel world) {
         return DeathHistory.getState(world).getDeathData(getPlayerUUID(), deathDataId);
     }
 
     @Override
-    public boolean canHit() {
+    public boolean isPickable() {
         return true;
     }
 
-    public static DeadBodyEntity create(ServerPlayerEntity player) {
-        DeathHistory history = DeathHistory.getState(player.getServerWorld());
+    public static DeadBodyEntity create(ServerPlayer player) {
+        DeathHistory history = DeathHistory.getState(player.serverLevel());
         int id = history.backup(player);
         System.out.println("Player " + player + " died. Death ID: " + id);
 
-        DeadBodyEntity deadBody = new DeadBodyEntity(BodiesBodies.DEAD_BODY_ENTITY_TYPE, player.getWorld());
-        deadBody.setPos(player.getX(), player.getY(), player.getZ());
-        deadBody.dataTracker.set(PLAYER_UUID, Optional.of(player.getUuid()));
+        DeadBodyEntity deadBody = new DeadBodyEntity(BodiesBodies.DEAD_BODY_ENTITY_TYPE, player.level());
+        deadBody.setPosRaw(player.getX(), player.getY(), player.getZ());
+        deadBody.entityData.set(PLAYER_UUID, Optional.of(player.getUUID()));
         List<DeadBodyData> savedData = new ArrayList<>(DeadBodyDataProvider.init(player));
 
-        NbtCompound nbt = new NbtCompound();
+        CompoundTag nbt = new CompoundTag();
         for (DeadBodyData data : savedData) {
-            nbt.put(data.getId(), data.write(new NbtCompound()));
+            nbt.put(data.getId(), data.write(new CompoundTag()));
         }
-        deadBody.dataTracker.set(INVENTORY_DATA, nbt);
+        deadBody.entityData.set(INVENTORY_DATA, nbt);
 
-        deadBody.resetPosition();
-        deadBody.refreshPosition();
+        deadBody.setOldPosAndRot();
+        deadBody.reapplyPosition();
 
 
-        deadBody.deathDataId = history.save(id, player,deadBody.getBlockPos(), savedData);
+        deadBody.deathDataId = history.save(id, player,deadBody.blockPosition(), savedData);
 
         return deadBody;
     }
 
     public UUID getPlayerUUID() {
-        return dataTracker.get(PLAYER_UUID).get();
+        return entityData.get(PLAYER_UUID).get();
     }
     @Override
-    protected Box calculateBoundingBox() {
-        Box box = super.calculateBoundingBox();
-        return new Box(box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ).shrink(0.0, 1.2, 0.0).expand(0.6, 0.0, 0.1);
+    protected AABB makeBoundingBox() {
+        AABB box = super.makeBoundingBox();
+        return new AABB(box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ).contract(0.0, 1.2, 0.0).inflate(0.6, 0.0, 0.1);
     }
 
     @Override
-    public ActionResult interact(PlayerEntity player, Hand hand) {
-        if (player.getWorld().isClient) return ActionResult.SUCCESS;
+    public InteractionResult interact(Player player, InteractionHand hand) {
+        if (player.level().isClientSide) return InteractionResult.SUCCESS;
 
-        if (Config.CONFIG.bodyAccessibleByAnyoneAfter > 0 && age < Config.CONFIG.bodyAccessibleByAnyoneAfter && dataTracker.get(PLAYER_UUID).isPresent() && !player.getUuid().equals(dataTracker.get(PLAYER_UUID).get())){
-            player.sendMessage(Text.literal("This body does not belong to you!"));
-            return ActionResult.PASS;
+        if (Config.CONFIG.bodyAccessibleByAnyoneAfter > 0 && tickCount < Config.CONFIG.bodyAccessibleByAnyoneAfter && entityData.get(PLAYER_UUID).isPresent() && !player.getUUID().equals(entityData.get(PLAYER_UUID).get())){
+            player.sendSystemMessage(Component.literal("This body does not belong to you!"));
+            return InteractionResult.PASS;
         }
 
-        ServerWorld world = (ServerWorld) player.getWorld();
+        ServerLevel world = (ServerLevel) player.level();
         DeathData deathData = getDeathData(world);
 
-        if (player.isSneaking()) {
+        if (player.isShiftKeyDown()) {
             for (DeadBodyData data : deathData.savedData()) {
                 data.transferTo(player);
             }
         } else {
             for (DeadBodyData data : deathData.savedData()) {
                 if (data instanceof VanillaDeadBodyData vanillaDeadBodyData) {
-                    player.openHandledScreen(new ExtendedScreenHandlerFactory() {
+                    player.openMenu(new ExtendedScreenHandlerFactory() {
                         @Override
-                        public void writeScreenOpeningData(ServerPlayerEntity player, PacketByteBuf buf) {
+                        public void writeScreenOpeningData(ServerPlayer player, FriendlyByteBuf buf) {
                             buf.writeInt(deathData.id());
                             buf.writeNbt(deathData.writeNbt());
                         }
 
                         @Override
-                        public Text getDisplayName() {
-                            return Text.literal("Dead body");
+                        public Component getDisplayName() {
+                            return Component.literal("Dead body");
                         }
 
                         @Override
-                        public ScreenHandler createMenu(int syncId, PlayerInventory playerInventory, PlayerEntity player) {
+                        public AbstractContainerMenu createMenu(int syncId, Inventory playerInventory, Player player) {
                             return new VanillaDeadBodyInventoryScreenHandler(syncId, playerInventory, getDeathData(world), vanillaDeadBodyData);
                         }
                     });
@@ -154,36 +153,36 @@ public class DeadBodyEntity extends Entity {
             }
 
         }
-        return ActionResult.SUCCESS;
+        return InteractionResult.SUCCESS;
     }
 
     public Optional<UUID> getPlayerUuid() {
-        return dataTracker.get(PLAYER_UUID);
+        return entityData.get(PLAYER_UUID);
     }
 
     @Override
-    protected void initDataTracker() {
+    protected void defineSynchedData() {
 
     }
 
     @Override
-    protected void readCustomDataFromNbt(NbtCompound nbt) {
-        this.dataTracker.set(PLAYER_UUID, Optional.of(nbt.getUuid("PlayerUUID")));
+    protected void readAdditionalSaveData(CompoundTag nbt) {
+        this.entityData.set(PLAYER_UUID, Optional.of(nbt.getUUID("PlayerUUID")));
         this.deathDataId = nbt.getInt("DeathDataId");
-        ServerWorld world = (ServerWorld) getWorld();
+        ServerLevel world = (ServerLevel) level();
         DeathData deathData = getDeathData(world);
         if (deathData != null) {
-            NbtCompound newNbt = new NbtCompound();
+            CompoundTag newNbt = new CompoundTag();
             for (DeadBodyData data : deathData.savedData()) {
-                newNbt.put(data.getId(), data.write(new NbtCompound()));
+                newNbt.put(data.getId(), data.write(new CompoundTag()));
             }
-            this.dataTracker.set(INVENTORY_DATA, newNbt);
+            this.entityData.set(INVENTORY_DATA, newNbt);
         }
     }
 
     @Override
-    protected void writeCustomDataToNbt(NbtCompound nbt) {
+    protected void addAdditionalSaveData(CompoundTag nbt) {
         nbt.putInt("DeathDataId", deathDataId);
-        nbt.putUuid("PlayerUUID", this.dataTracker.get(PLAYER_UUID).orElse(null));
+        nbt.putUUID("PlayerUUID", this.entityData.get(PLAYER_UUID).orElse(null));
     }
 }
