@@ -86,7 +86,7 @@ public class DeadBodyEntityRenderer extends EntityRenderer<DeadBodyEntity> {
     }
 
     @Override
-    public ResourceLocation getTexture(DeadBodyEntity entity) {
+    public ResourceLocation getTextureLocation(DeadBodyEntity entity) {
         return null;
     }
 }
